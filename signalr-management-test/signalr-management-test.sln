@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31912.275
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "signalr-management-test", "signalr-management-test\signalr-management-test.csproj", "{0DB15D8D-913D-42D9-B18E-55D28D0E7DA1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0DB15D8D-913D-42D9-B18E-55D28D0E7DA1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0DB15D8D-913D-42D9-B18E-55D28D0E7DA1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0DB15D8D-913D-42D9-B18E-55D28D0E7DA1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0DB15D8D-913D-42D9-B18E-55D28D0E7DA1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D39F0943-1FE5-4981-A00C-E624AE368296}
+	EndGlobalSection
+EndGlobal
