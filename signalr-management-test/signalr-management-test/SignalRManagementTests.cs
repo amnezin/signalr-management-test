@@ -82,7 +82,7 @@ namespace signalr_management_test
 
             var groupId = EchoHub.GroupIds.First().Key;
             var connectionId = EchoHub.ConnectionIds.First().Key;
-            
+
             using var serviceManager = new ServiceManagerBuilder()
                 .WithOptions(option =>
                 {
@@ -92,15 +92,22 @@ namespace signalr_management_test
             await using var hubContext = await serviceManager.CreateHubContextAsync(signalRHubName, default);
             var groupExists = await hubContext.ClientManager.GroupExistsAsync(groupId);
             var connectionExists = await hubContext.ClientManager.ConnectionExistsAsync(connectionId);
-            
+
             Assert.True(groupExists);
             Assert.True(connectionExists);
 
             // Manually dispose everything
             await hubContext.DisposeAsync();
             serviceManager.Dispose();
-            await connection2.StopAsync();
+
+            connection1.Remove("Echo");
             await connection1.StopAsync();
+            await connection1.DisposeAsync();
+
+            connection2.Remove("Echo");
+            await connection2.StopAsync();
+            await connection2.DisposeAsync();
+
             server.Dispose();
             apiFactory.Dispose();
 
