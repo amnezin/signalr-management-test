@@ -1,15 +1,16 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Azure.SignalR.Management;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -20,49 +21,99 @@ namespace signalr_management_test
     {
         public static string AzureSignalRServiceConnectionString =
             "Endpoint=https://myservice.service.signalr.net;AccessKey=xxx=;Version=1.0;";
-
-        public static string SignalRHubName = "echo";
     }
 
     public class SignalRManagementTests
     {
         [Fact]
-        public async Task SignalRManagementShouldBeAbleRetrieveExistingGroupAndConnection()
+        public async Task Test1()
         {
-            var hubContext = await CreateSignalRServiceHubContext();
+            await SignalRTest(nameof(EchoHub));
+        }
 
-            var server = new TestApiFactory().Server;
+        [Fact]
+        public async Task Test2()
+        {
+            await SignalRTest(nameof(EchoHub));
+        }
 
-            var connection1 = CreateHubClientConnectionAsync(server);
+        [Fact]
+        public async Task Test3()
+        {
+            await SignalRTest(nameof(EchoHub));
+        }
+
+        [Fact]
+        public async Task Test4()
+        {
+            await SignalRTest(nameof(EchoHub));
+        }
+
+        [Fact]
+        public async Task Test5()
+        {
+            await SignalRTest("NotEchoHub");
+        }
+
+        private async Task SignalRTest(string signalRHubName)
+        {
+            using var apiFactory = new TestApiFactory().WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(
+                        new Dictionary<string, string>
+                        {
+                            ["SignalRHubName"] = signalRHubName
+                        });
+                });
+            });
+            using var server = apiFactory.Server;
+
+            await using var connection1 = CreateHubClientConnectionAsync(server, signalRHubName);
             await connection1.StartAsync();
-            await Task.Delay(500);
 
-            var connection2 = CreateHubClientConnectionAsync(server);
+            await using var connection2 = CreateHubClientConnectionAsync(server, signalRHubName);
             await connection2.StartAsync();
-            await Task.Delay(500);
 
             Assert.True(EchoHub.ConnectionIds.Count == 2);
 
             await connection1.InvokeAsync("Echo", "message");
 
-            var groupId = EchoHub.GroupIds.First();
-            var connectionId = EchoHub.ConnectionIds.First();
-
+            var groupId = EchoHub.GroupIds.First().Key;
+            var connectionId = EchoHub.ConnectionIds.First().Key;
+            
+            using var serviceManager = new ServiceManagerBuilder()
+                .WithOptions(option =>
+                {
+                    option.ConnectionString = Common.AzureSignalRServiceConnectionString;
+                })
+                .BuildServiceManager();
+            await using var hubContext = await serviceManager.CreateHubContextAsync(signalRHubName, default);
             var groupExists = await hubContext.ClientManager.GroupExistsAsync(groupId);
             var connectionExists = await hubContext.ClientManager.ConnectionExistsAsync(connectionId);
-
-            // This is always false
+            
             Assert.True(groupExists);
-            // This is also always false
             Assert.True(connectionExists);
+
+            // Manually dispose everything
+            await hubContext.DisposeAsync();
+            serviceManager.Dispose();
+            await connection2.StopAsync();
+            await connection1.StopAsync();
+            server.Dispose();
+            apiFactory.Dispose();
+
+            await Task.Delay(2000);
+            Assert.True(EchoHub.ConnectionIds.Count == 0);
+            Assert.True(EchoHub.GroupIds.Count == 0);
         }
 
-        private HubConnection CreateHubClientConnectionAsync(TestServer server)
+        private HubConnection CreateHubClientConnectionAsync(TestServer server, string signalRHubName)
         {
             var connectionBuilder = new HubConnectionBuilder()
-                .WithUrl(server.BaseAddress + Common.SignalRHubName, options =>
+                .WithUrl(server.BaseAddress + signalRHubName, options =>
                 {
-                    options.Transports = HttpTransportType.LongPolling;
                     options.HttpMessageHandlerFactory = externalHandler => new SignalRClientHttpMessageHandler(server.CreateHandler(), externalHandler);
                 });
             connectionBuilder.Services.AddLogging();
@@ -73,50 +124,40 @@ namespace signalr_management_test
             });
             return connection;
         }
-
-        private static async Task<ServiceHubContext> CreateSignalRServiceHubContext()
-        {
-            using var serviceManager = new ServiceManagerBuilder()
-                .WithOptions(option =>
-                {
-                    option.ConnectionString = Common.AzureSignalRServiceConnectionString;
-                })
-                .BuildServiceManager();
-            return await serviceManager.CreateHubContextAsync(Common.SignalRHubName, default);
-        }
     }
 
     public class EchoHub : Hub
     {
-        public static List<string> GroupIds { get; set; } = new List<string>();
-        public static List<string> ConnectionIds { get; set; } = new List<string>();
+        public static ConcurrentDictionary<string, bool> GroupIds { get; set; } = new ConcurrentDictionary<string, bool>();
+        public static ConcurrentDictionary<string, bool> ConnectionIds { get; set; } = new ConcurrentDictionary<string, bool>();
 
         public override async Task OnConnectedAsync()
         {
+            var groupId = Guid.NewGuid();
             if (!GroupIds.Any())
             {
-                GroupIds.Add("Echo");
+                GroupIds.TryAdd(groupId.ToString(), true);
             }
 
-            if (!ConnectionIds.Contains(Context.ConnectionId))
+            if (!ConnectionIds.ContainsKey(Context.ConnectionId))
             {
-                ConnectionIds.Add(Context.ConnectionId);
+                ConnectionIds.TryAdd(Context.ConnectionId, true);
             }
 
-            await Groups.AddToGroupAsync(Context.ConnectionId, "Echo");
+            await Groups.AddToGroupAsync(Context.ConnectionId, groupId.ToString());
             await base.OnConnectedAsync();
         }
 
         public override Task OnDisconnectedAsync(Exception exception)
         {
-            if (ConnectionIds.Contains(Context.ConnectionId))
+            if (ConnectionIds.ContainsKey(Context.ConnectionId))
             {
-                ConnectionIds.Remove(Context.ConnectionId);
+                ConnectionIds.TryRemove(Context.ConnectionId, out _);
             }
 
             if (!ConnectionIds.Any())
             {
-                GroupIds.Remove("Echo");
+                GroupIds.Clear();
             }
 
             return base.OnDisconnectedAsync(exception);
@@ -143,6 +184,13 @@ namespace signalr_management_test
 
     public class WebApplicationStartup
     {
+        private readonly IConfiguration _configuration;
+
+        public WebApplicationStartup(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc();
@@ -157,7 +205,8 @@ namespace signalr_management_test
             app.UseRouting();
             app.UseEndpoints(endpointBuilder =>
             {
-                endpointBuilder.MapHub<EchoHub>($"/{Common.SignalRHubName}");
+                var signalRHubName = _configuration["SignalRHubName"];
+                endpointBuilder.MapHub<EchoHub>($"/{signalRHubName}");
             });
             //app.UseAzureSignalR(routeBuilder => routeBuilder.MapHub<EchoHub>($"/{Common.SignalRHubName}"));
         }
